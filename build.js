@@ -73,13 +73,9 @@ function renderRichText(node) {
 
 function renderInlineMarkdown(text) {
   let html = escapeHtml(text);
-  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // Bold
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  // Markdown links [label](url)
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
     const safeUrl = escapeHtml(normalizeAssetUrl(url.trim()));
     return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
@@ -102,7 +98,6 @@ function renderBodyContent(rawBody) {
 
   return blocks
     .map(block => {
-      // Standalone Markdown image: ![alt](url)
       const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
       if (imgMatch) {
         const alt = escapeHtml(imgMatch[1] || 'Article image');
@@ -110,7 +105,6 @@ function renderBodyContent(rawBody) {
         return `<figure class="article-figure"><img src="${src}" alt="${alt}" loading="lazy" /></figure>`;
       }
 
-      // Headings
       if (block.startsWith('### ')) {
         return `<h3>${renderInlineMarkdown(block.slice(4))}</h3>`;
       }
@@ -121,7 +115,6 @@ function renderBodyContent(rawBody) {
         return `<h2>${renderInlineMarkdown(block.slice(2))}</h2>`;
       }
 
-      // Blockquote
       if (block.startsWith('&gt; ') || block.startsWith('> ')) {
         const quoteText = block.replace(/^>\s?/, '');
         return `<blockquote><p>${renderInlineMarkdown(quoteText)}</p></blockquote>`;
@@ -219,13 +212,17 @@ async function buildSite() {
     fs.writeFileSync(path.join(publicDir, 'index.html'), finalHtml);
     fs.copyFileSync(path.resolve('style.css'), path.join(publicDir, 'style.css'));
 
+    if (fs.existsSync(path.resolve('about.html'))) {
+      fs.copyFileSync(path.resolve('about.html'), path.join(publicDir, 'about.html'));
+    }
+
     for (const post of posts) {
       const articlePage = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(post.title)} — Mothei</title>
+  <title>${escapeHtml(post.title)} — Mothei - Sports, Statistics, Art, Politics and VIBES</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet">
@@ -238,6 +235,7 @@ async function buildSite() {
       <nav>
         <a href="/">Home</a>
         <a href="/#articles">Articles</a>
+        <a href="/about.html">About</a>
       </nav>
     </div>
   </header>
@@ -259,7 +257,7 @@ async function buildSite() {
 
   <footer class="footer">
     <div class="container footer-inner">
-      <p>&copy; 2026 Mothei. Built with Contentful &amp; GitHub Pages.</p>
+      <p>&copy; 2026 Mothei. Built with power of Mvuthuvuthu &amp; Call your mom.</p>
     </div>
   </footer>
 </body>

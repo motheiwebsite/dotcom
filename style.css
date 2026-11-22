@@ -13,6 +13,11 @@
   --shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.12);
 }
 
+nav a.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -364,6 +369,10 @@ nav a:hover {
 .article-figure img {
   width: 100%;
   border-radius: 10px;
+}
+nav a.active {
+  color: var(--primary);
+  font-weight: 600;
 }
 
 /* Footer */
