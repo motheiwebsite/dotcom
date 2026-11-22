@@ -3,7 +3,6 @@ const { createClient } = contentful;
 import fs from 'fs';
 import path from 'path';
 
-// Replace with your environment variables or credentials
 const SPACE_ID = process.env.CONTENTFUL_SPACE_ID || 'YOUR_SPACE_ID';
 const ACCESS_TOKEN = process.env.CONTENTFUL_ACCESS_TOKEN || 'YOUR_DELIVERY_TOKEN';
 
@@ -12,73 +11,194 @@ const client = createClient({
   accessToken: ACCESS_TOKEN,
 });
 
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Convert Contentful Rich Text document nodes into clean HTML
+function renderRichText(node) {
+  if (!node) return '';
+
+  if (node.nodeType === 'text') {
+    let text = escapeHtml(node.value || '');
+    const marks = node.marks || [];
+    if (marks.some(m => m.type === 'code')) text = `<code>${text}</code>`;
+    if (marks.some(m => m.type === 'bold')) text = `<strong>${text}</strong>`;
+    if (marks.some(m => m.type === 'italic')) text = `<em>${text}</em>`;
+    return text;
+  }
+
+  const childrenHtml = (node.content || []).map(renderRichText).join('');
+
+  switch (node.nodeType) {
+    case 'document':
+      return childrenHtml;
+    case 'paragraph':
+      return `<p>${childrenHtml}</p>`;
+    case 'heading-2':
+      return `<h2>${childrenHtml}</h2>`;
+    case 'heading-3':
+      return `<h3>${childrenHtml}</h3>`;
+    case 'blockquote':
+      return `<blockquote>${childrenHtml}</blockquote>`;
+    case 'unordered-list':
+      return `<ul>${childrenHtml}</ul>`;
+    case 'ordered-list':
+      return `<ol>${childrenHtml}</ol>`;
+    case 'list-item':
+      return `<li>${childrenHtml}</li>`;
+    case 'hyperlink': {
+      const href = escapeHtml(node.data?.uri || '#');
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer">${childrenHtml}</a>`;
+    }
+    case 'embedded-asset-block': {
+      const url = node.data?.target?.fields?.file?.url;
+      const title = escapeHtml(node.data?.target?.fields?.title || 'Embedded image');
+      return url
+        ? `<figure class="article-figure"><img src="https:${url}" alt="${title}" loading="lazy" /></figure>`
+        : '';
+    }
+    default:
+      return childrenHtml;
+  }
+}
+
 async function buildSite() {
   try {
-    // 1. Fetch posts from Contentful sorted by newest first
     const response = await client.getEntries({
       content_type: 'blogPost',
       order: '-fields.publishDate',
     });
 
-    const posts = response.items.map(item => ({
-      title: item.fields.title,
-      slug: item.fields.slug,
-      date: new Date(item.fields.publishDate).toLocaleDateString('en-US', {
+    const posts = response.items.map(item => {
+      const rawDate = item.fields.publishDate ? new Date(item.fields.publishDate) : new Date();
+      const formattedDate = rawDate.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-      }),
-      excerpt: item.fields.excerpt,
-      image: item.fields.featuredImage?.fields?.file?.url ? `https:${item.fields.featuredImage.fields.file.url}` : 'https://via.placeholder.com/800x450',
-      isFeatured: Boolean(item.fields.isFeatured),
-    }));
+      });
+      const imageUrl = item.fields.featuredImage?.fields?.file?.url
+        ? `https:${item.fields.featuredImage.fields.file.url}`
+        : 'https://via.placeholder.com/800x450?text=Mothei';
 
-    // 2. Identify Hero post and grid posts
+      return {
+        title: item.fields.title || 'Untitled',
+        slug: item.fields.slug || 'post',
+        date: formattedDate,
+        excerpt: item.fields.excerpt || '',
+        image: imageUrl,
+        isFeatured: Boolean(item.fields.isFeatured),
+        bodyHtml: renderRichText(item.fields.body),
+      };
+    });
+
     const heroPost = posts.find(p => p.isFeatured) || posts[0];
     const gridPosts = posts.filter(p => p !== heroPost);
 
-    // 3. Generate Hero HTML
-    const heroHtml = heroPost ? `
+    const heroHtml = heroPost
+      ? `
       <section class="hero-card">
-        <div class="hero-image" style="background-image: url('${heroPost.image}');"></div>
+        <div class="hero-image" style="background-image: url('${escapeHtml(heroPost.image)}');"></div>
         <div class="hero-content">
           <span class="badge">Featured</span>
-          <h2 class="hero-title">${heroPost.title}</h2>
-          <p class="hero-excerpt">${heroPost.excerpt}</p>
+          <h1 class="hero-title">${escapeHtml(heroPost.title)}</h1>
+          <p class="hero-excerpt">${escapeHtml(heroPost.excerpt)}</p>
           <div class="post-meta">
-            <span>${heroPost.date}</span>
-            <a href="/posts/${heroPost.slug}.html" class="read-more">Read Article →</a>
+            <span>${escapeHtml(heroPost.date)}</span>
+            <a href="/posts/${encodeURIComponent(heroPost.slug)}.html" class="read-more">Read Article →</a>
           </div>
         </div>
       </section>
-    ` : '';
+    `
+      : '';
 
-    // 4. Generate Grid Cards HTML
-    const gridHtml = gridPosts.map(post => `
+    const gridHtml = gridPosts.length
+      ? gridPosts
+          .map(
+            post => `
       <article class="post-card">
-        <img src="${post.image}" alt="${post.title}" class="card-image" loading="lazy" />
+        <a href="/posts/${encodeURIComponent(post.slug)}.html" class="card-image-link">
+          <img src="${escapeHtml(post.image)}" alt="${escapeHtml(post.title)}" class="card-image" loading="lazy" />
+        </a>
         <div class="card-content">
-          <span class="card-date">${post.date}</span>
-          <h3 class="card-title">${post.title}</h3>
-          <p class="card-excerpt">${post.excerpt}</p>
-          <a href="/posts/${post.slug}.html" class="card-link">Read more</a>
+          <span class="card-date">${escapeHtml(post.date)}</span>
+          <h3 class="card-title">${escapeHtml(post.title)}</h3>
+          <p class="card-excerpt">${escapeHtml(post.excerpt)}</p>
+          <a href="/posts/${encodeURIComponent(post.slug)}.html" class="card-link">Read more →</a>
         </div>
       </article>
-    `).join('');
+    `
+          )
+          .join('')
+      : '<p class="empty-state">More articles coming soon.</p>';
 
-    // 5. Inject into Template and Save Output
     const template = fs.readFileSync(path.resolve('template.html'), 'utf-8');
     const finalHtml = template
-      .replace('', heroHtml)
-      .replace('', gridHtml);
+      .replace('<!-- HERO_SECTION -->', heroHtml)
+      .replace('<!-- POST_GRID -->', gridHtml);
 
-    const distDir = path.resolve('public');
-    if (!fs.existsSync(distDir)) fs.mkdirSync(distDir);
-    
-    fs.writeFileSync(path.join(distDir, 'index.html'), finalHtml);
-    fs.copyFileSync(path.resolve('style.css'), path.join(distDir, 'style.css'));
+    const publicDir = path.resolve('public');
+    const postsDir = path.join(publicDir, 'posts');
+    fs.mkdirSync(postsDir, { recursive: true });
 
-    console.log('Site successfully built to /public');
+    fs.writeFileSync(path.join(publicDir, 'index.html'), finalHtml);
+    fs.copyFileSync(path.resolve('style.css'), path.join(publicDir, 'style.css'));
+
+    // Generate individual article pages at /posts/<slug>.html
+    for (const post of posts) {
+      const articlePage = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(post.title)} — Mothei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="/" class="brand-logo">Mothei<span class="brand-dot">.</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/#articles">Articles</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container article-page">
+    <a href="/" class="back-link">← Back to all articles</a>
+    <article class="article-full">
+      <header class="article-header">
+        <span class="card-date">${escapeHtml(post.date)}</span>
+        <h1 class="article-title">${escapeHtml(post.title)}</h1>
+        ${post.excerpt ? `<p class="article-lead">${escapeHtml(post.excerpt)}</p>` : ''}
+      </header>
+      <img src="${escapeHtml(post.image)}" alt="${escapeHtml(post.title)}" class="article-cover" />
+      <div class="article-body">
+        ${post.bodyHtml}
+      </div>
+    </article>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <p>&copy; 2026 Mothei. Built with Contentful &amp; GitHub Pages.</p>
+    </div>
+  </footer>
+</body>
+</html>`;
+
+      fs.writeFileSync(path.join(postsDir, `${post.slug}.html`), articlePage);
+    }
+
+    console.log(`Site successfully built to /public (${posts.length} post(s))`);
   } catch (error) {
     console.error('Error building site:', error);
     process.exit(1);
