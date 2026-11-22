@@ -76,7 +76,7 @@ async function buildSite() {
     if (!fs.existsSync(distDir)) fs.mkdirSync(distDir);
     
     fs.writeFileSync(path.join(distDir, 'index.html'), finalHtml);
-    fs.copyFileSync(path.resolve('styles.css'), path.join(distDir, 'styles.css'));
+    fs.copyFileSync(path.resolve('style.css'), path.join(distDir, 'style.css'));
 
     console.log('Site successfully built to /public');
   } catch (error) {
