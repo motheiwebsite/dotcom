@@ -1,4 +1,5 @@
-import { createClient } from 'contentful';
+import contentful from 'contentful';
+const { createClient } = contentful;
 import fs from 'fs';
 import path from 'path';
 
