@@ -19,7 +19,11 @@ function escapeHtml(value = '') {
     .replace(/"/g, '&quot;');
 }
 
-// Convert Contentful Rich Text document nodes into clean HTML
+function normalizeAssetUrl(url = '') {
+  if (!url) return '';
+  return url.startsWith('//') ? `https:${url}` : url;
+}
+
 function renderRichText(node) {
   if (!node) return '';
 
@@ -56,10 +60,10 @@ function renderRichText(node) {
       return `<a href="${href}" target="_blank" rel="noopener noreferrer">${childrenHtml}</a>`;
     }
     case 'embedded-asset-block': {
-      const url = node.data?.target?.fields?.file?.url;
+      const url = normalizeAssetUrl(node.data?.target?.fields?.file?.url);
       const title = escapeHtml(node.data?.target?.fields?.title || 'Embedded image');
       return url
-        ? `<figure class="article-figure"><img src="https:${url}" alt="${title}" loading="lazy" /></figure>`
+        ? `<figure class="article-figure"><img src="${escapeHtml(url)}" alt="${title}" loading="lazy" /></figure>`
         : '';
     }
     default:
@@ -67,7 +71,22 @@ function renderRichText(node) {
   }
 }
 
-// Handle both Long text (plain string) and Rich Text objects in `body`
+function renderInlineMarkdown(text) {
+  let html = escapeHtml(text);
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // Markdown links [label](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+    const safeUrl = escapeHtml(normalizeAssetUrl(url.trim()));
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  });
+  return html;
+}
+
 function renderBodyContent(rawBody) {
   if (!rawBody) return '';
 
@@ -75,13 +94,42 @@ function renderBodyContent(rawBody) {
     return renderRichText(rawBody);
   }
 
-  const paragraphs = String(rawBody)
+  const blocks = String(rawBody)
     .trim()
     .split(/\n\s*\n|\n/)
-    .map(p => p.trim())
+    .map(b => b.trim())
     .filter(Boolean);
 
-  return paragraphs.map(p => `<p>${escapeHtml(p)}</p>`).join('\n');
+  return blocks
+    .map(block => {
+      // Standalone Markdown image: ![alt](url)
+      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (imgMatch) {
+        const alt = escapeHtml(imgMatch[1] || 'Article image');
+        const src = escapeHtml(normalizeAssetUrl(imgMatch[2].trim()));
+        return `<figure class="article-figure"><img src="${src}" alt="${alt}" loading="lazy" /></figure>`;
+      }
+
+      // Headings
+      if (block.startsWith('### ')) {
+        return `<h3>${renderInlineMarkdown(block.slice(4))}</h3>`;
+      }
+      if (block.startsWith('## ')) {
+        return `<h2>${renderInlineMarkdown(block.slice(3))}</h2>`;
+      }
+      if (block.startsWith('# ')) {
+        return `<h2>${renderInlineMarkdown(block.slice(2))}</h2>`;
+      }
+
+      // Blockquote
+      if (block.startsWith('&gt; ') || block.startsWith('> ')) {
+        const quoteText = block.replace(/^>\s?/, '');
+        return `<blockquote><p>${renderInlineMarkdown(quoteText)}</p></blockquote>`;
+      }
+
+      return `<p>${renderInlineMarkdown(block)}</p>`;
+    })
+    .join('\n');
 }
 
 async function buildSite() {
@@ -99,9 +147,14 @@ async function buildSite() {
         month: 'short',
         day: 'numeric',
       });
+
+      const rawBodyStr = typeof item.fields.body === 'string' ? item.fields.body : '';
+      const firstBodyImgMatch = rawBodyStr.match(/!\[[^\]]*\]\(([^)]+)\)/);
+      const fallbackBodyImg = firstBodyImgMatch ? normalizeAssetUrl(firstBodyImgMatch[1].trim()) : '';
+
       const imageUrl = item.fields.featuredImage?.fields?.file?.url
-        ? `https:${item.fields.featuredImage.fields.file.url}`
-        : 'https://via.placeholder.com/800x450?text=Mothei';
+        ? normalizeAssetUrl(item.fields.featuredImage.fields.file.url)
+        : fallbackBodyImg || 'https://via.placeholder.com/800x450?text=Mothei';
 
       return {
         title: item.fields.title || 'Untitled',
@@ -206,7 +259,7 @@ async function buildSite() {
 
   <footer class="footer">
     <div class="container footer-inner">
-      <p>&copy; 2026 Mothei. Built with Mvuthuvuthu &amp; Sende .</p>
+      <p>&copy; 2026 Mothei. Built with Contentful &amp; GitHub Pages.</p>
     </div>
   </footer>
 </body>
