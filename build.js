@@ -67,11 +67,29 @@ function renderRichText(node) {
   }
 }
 
+// Handle both Long text (plain string) and Rich Text objects in `body`
+function renderBodyContent(rawBody) {
+  if (!rawBody) return '';
+
+  if (typeof rawBody === 'object' && rawBody.nodeType) {
+    return renderRichText(rawBody);
+  }
+
+  const paragraphs = String(rawBody)
+    .trim()
+    .split(/\n\s*\n|\n/)
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  return paragraphs.map(p => `<p>${escapeHtml(p)}</p>`).join('\n');
+}
+
 async function buildSite() {
   try {
     const response = await client.getEntries({
       content_type: 'blogPost',
       order: '-fields.publishDate',
+      include: 2,
     });
 
     const posts = response.items.map(item => {
@@ -92,7 +110,7 @@ async function buildSite() {
         excerpt: item.fields.excerpt || '',
         image: imageUrl,
         isFeatured: Boolean(item.fields.isFeatured),
-        bodyHtml: renderRichText(item.fields.body),
+        bodyHtml: renderBodyContent(item.fields.body),
       };
     });
 
@@ -148,7 +166,6 @@ async function buildSite() {
     fs.writeFileSync(path.join(publicDir, 'index.html'), finalHtml);
     fs.copyFileSync(path.resolve('style.css'), path.join(publicDir, 'style.css'));
 
-    // Generate individual article pages at /posts/<slug>.html
     for (const post of posts) {
       const articlePage = `<!DOCTYPE html>
 <html lang="en">
@@ -189,7 +206,7 @@ async function buildSite() {
 
   <footer class="footer">
     <div class="container footer-inner">
-      <p>&copy; 2026 Mothei. Built with Contentful &amp; GitHub Pages.</p>
+      <p>&copy; 2026 Mothei. Built with Mvuthuvuthu &amp; Sende .</p>
     </div>
   </footer>
 </body>
